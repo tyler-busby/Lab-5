@@ -67,6 +67,7 @@ Please don't do either of those things.
 ## Setting Up Your Code Chunks
 
 -   The first chunk of this Quarto document should be used to *declare your libraries* (probably only `tidyverse` for now).
+
 -   The second chunk of your Quarto document should be to *load in your data*.
 
 ## Save Regularly, Render Often
@@ -146,16 +147,15 @@ included in the `teacher_evals_codebook.pdf`.
 
 ```{r}
 #| label: setup
-# code chunk for loading packages
-
+library(tidyverse) #load tidyverse package
+library(mosaic) #loads mosaic package
 ```
 
 **2. Load in the `teacher_evals` data.** 
 
 ```{r}
 #| label: load-data
-# code chunk for importing the data
-
+teacher_evals <- read_csv("data-raw/teacher_evals.csv")
 ```
 
 ### Data Inspection + Summary
@@ -164,17 +164,23 @@ included in the `teacher_evals_codebook.pdf`.
 
 ```{r}
 #| label: explore-data
-# you may want to use code to answer this question
+head(teacher_evals) #shows first 5 lines of the dataset
+nrow(teacher_evals) #shows number of rows in the dataset
+summary(teacher_evals) #gives summary of the dataset
 
 ```
+
+> "teacher_evals" is a dataset comprised of 22 columns of variables and 8015 rows of cases. The variables include the characteristics of the teacher (teacher_id, seniority, and gender), characteristics of the course (time_of_day, weekday, and class_duration), response share (no_participants and resp_share), course grade information (stud_grade_avg, stud_grade_std, stud_grade_var_coef, percent_failed, stud_grade_avg_cur, stud_grade_std_cur, stud_grade_var_coef_cur, and percent_failed_cur), and SET score information (question_no, SET_score_avg, SET_score_1sem, and maximum_score). Most variables are numeric doubles, with the exception of course_id, weekday, time_of_day, academic_degree, gender, and teacher_id, which is wrongly classified as a double by R. There are a number of NA values in the dataset: 34 in no_participants and resp_share; 41 in stud_grade_avg, stud_grade_std, stud_grade_var_coef, percent_failed, stud_grade_avg_cur, stud_grade_std_cur, stud_grade_var_coef_cur, and percent_failed_cur; 914 in class_duration; and 697 for SET_score_1sem.  
 
 **4. What is the unit of observation (i.e. a single row in the dataset) identified by?**
 
 ```{r}
 #| label: row-identification
-# you may want to use code to answer this question
-
+head(teacher_evals) |>
+  arrange(teacher_id) #shows first 5 lines of the dataset arranged by teacher_id
 ```
+
+> The dataset is organized by question per teacher_id, so one row responds to one question for a given teacher.  
 
 **5. Use _one_ `dplyr` pipeline to clean the data by:**
 
@@ -187,41 +193,71 @@ included in the `teacher_evals_codebook.pdf`.
 
 ```{r}
 #| label: data-cleaning
-# code chunk for Q4
+teacher_evals_clean <- teacher_evals |> #save new data as "teacher_evals_clean"
+  rename("sex" = gender) |> #rename gender variable to sex
+  filter(no_participants >= 10) |> #removing courses with <10 respondents
+  mutate(teacher_id = as.character(teacher_id)) |> #sets teacher_id as a categorical variable
+  select(course_id, teacher_id, question_no, no_participants, resp_share, 
+         SET_score_avg, percent_failed_cur, academic_degree, seniority, sex) #select only desired variables
 
+write_csv(teacher_evals_clean, "data-clean/teacher_evals_clean.csv") #save dataset as csv in data-clean folder
 ```
 
 **6. How many unique instructors and unique courses are present in the cleaned dataset?**
 
 ```{r}
 #| label: unique-courses
-# code chunk for Q5
-
+teacher_evals_clean |>
+  distinct(teacher_id, course_id) |> #find unique teachers and courses
+  count() #count number
 ```
+
+> There are 1094 unique teacher and course combinations in the dataset.
 
 **7. One teacher-course combination has some missing values, coded as `NA`. Which instructor has these missing values? Which course? What variable are the missing values in?**
 
 ```{r}
 #| label: uncovering-missing-values
-# code chunk for Q6
-
+teacher_evals_clean |>
+  filter(if_any(.cols = -c(teacher_id, course_id), #filters for every column except teacher_id and course_id
+                .fns = is.na)) #finds any na values
 ```
+
+> It appears the teacher-course combination with na values is the the combination of teacher 56347 and course PAB3SE004PA. The value missing is percent_failed_cur.  
 
 **8. What are the demographics of the instructors in this study? Investigate the variables `academic_degree`, `seniority`, and `sex` and summarize your findings in ~3 complete sentences.**
 
 ```{r}
 #| label: exploring-demographics-of-instructors
-# code chunk for Q7
+teacher_evals_clean |>
+  count(academic_degree) |> #find counts teachers with each type of academic degree
+  mutate(prop = n/nrow(teacher_evals_clean)) #determines proportion of teachers with that degree type
 
+teacher_evals_clean |>
+  count(seniority) |> #counts teachers by years of seniority
+  mutate(prop = n/nrow(teacher_evals_clean)) |> #determines proportion of teachers by seniority
+  arrange(desc(prop)) #arrange by proportion with largest being at top
+
+teacher_evals_clean |>
+  count(sex) |> #find counts teachers by each sex
+  mutate(prop = n/nrow(teacher_evals_clean)) #determines proportion of teachers by sex
 ```
+
+> In the dataset, a majority of the teachers listed are doctors, with 64.06% having a doctorate, 27.18% having a masters, 6.85% having no degrees, and 1.92% having a professional degree. Seniority showed that the largest percentage of teachers have 2 years of seniority with 25.26%, then 6 years, 8 years, 11 years, 4 years, 1 year, 7 years, 10 years, 3 years, 9 years, and 5 years being the smallest with a percentage of 4.11%. Finally, a the highest percentage of teachers were shown to be male, with a slim majority of 51.91%.  
 
 **9. Each course seems to have used a different subset of the nine evaluation questions. How many teacher-course combinations asked all nine questions?**
 
 ```{r}
 #| label: teacher-course-asked-every-question
-# code chunk for Q8
-
+teacher_evals_clean |>
+  group_by(teacher_id, course_id) |> #groups by teacher and course id
+  summarise(questions_answered = count(teacher_id, course_id)) |> #determines number of questions answered by counting number of times each teacher-course combination appears (denoting a new question)
+  filter(questions_answered == 9) |> #selects only teachers who asked all 9 questions
+  ungroup() |> #ungroups data to allow count function
+  count() #counts number of unique teacher-course combinations
 ```
+
+> Only 49 teacher-course combinations asked all 49 questions.  
 
 ## Rate my Professor
 
@@ -229,22 +265,48 @@ included in the `teacher_evals_codebook.pdf`.
 
 ```{r}
 #| label: question-1-high-low
-# code chunk for Q9
-
+teacher_evals_clean |>
+  filter(question_no == 901) |> #filter for only question 1
+  group_by(teacher_id) |> #group by teacher
+  summarise(mean_SET_score_avg = mean(SET_score_avg)) |> #determine average SET score across all classes
+  filter(mean_SET_score_avg == c(1,5)) |> #only select teachers with a mean score of 1 or 5
+  arrange(mean_SET_score_avg) #arranges by SET score average
 ```
+
+> In the dataset, 42 teachers recieved the maximum average rating of 5 for question 1 across all their courses, while only 1, teacher 54201, recieved the lowest average rating of 1 across all their courses.   
 
 **11. Which instructors with one year of experience had the highest and lowest average percentage of students failing in the current semester across all their courses?**
 
 ```{r}
 #| label: one-year-experience-failing-students
-# code chunk for Q10
-
+teacher_evals_clean |>
+  filter(seniority == 1) |> #filter for only 1st year teachers
+  group_by(teacher_id) |> #group by teacher
+  summarise(mean_percent_failed_cur = mean(percent_failed_cur)) |> #determine percent failing across all classes
+  arrange(mean_percent_failed_cur) #arrange by number of students failing
 ```
+
+> In the dataset, 6 teachers are tied for the lowest percentage of students failing at 0.00%: teacher 102379, 103092, 106126, 86222, 98650, and 98651. The teacher with the highest percentage of students failing is teacher 106692 with 68.00% of students failing.  
 
 **12. Which female instructors with either a doctorate or professional degree had the highest and lowest average percent of students responding to the evaluation across all their courses?**
 
 ```{r}
 #| label: female-instructor-student-response
-# code chunk for Q11
+teacher_evals_clean |>
+  filter(sex == "female",
+         academic_degree == c("dr", "prof")) |>
+  group_by(teacher_id) |> #group by teacher
+  summarise(mean_resp_share = mean(resp_share)) |> #determine average percent response across all classes
+  arrange(desc(mean_resp_share)) |> #arrange by mean percent response with highest at top
+  head(5) #look at the top 5
 
+teacher_evals_clean |>
+  filter(sex == "female",
+         academic_degree == c("dr", "prof")) |>
+  group_by(teacher_id) |> #group by teacher
+  summarise(mean_resp_share = mean(resp_share)) |> #determine average percent response across all classes
+  arrange(mean_resp_share) |> #arrange by mean percent response with lowest at top
+  head(5) #look at the top 5
 ```
+
+> The teacher with the highest percentage of responses across all their classes was teacher 101508 with a 52.17% of their students responding, and the teacher with the lowest percentage of responses across all their classes was teacher 56345 with a 4.56% of their students responding.  
